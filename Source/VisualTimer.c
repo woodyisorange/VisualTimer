@@ -163,6 +163,8 @@ int32 WinMain(
     LPSTR CommandLine,
     int32 ShowCommand)
 {
+    ZeroMemory(&Globals, sizeof(Globals));
+
     Globals.ProgramName = "Visual Timer";
 
     const char* WindowClassName = "VisualTimerMainWindow";
