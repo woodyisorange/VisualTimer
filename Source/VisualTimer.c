@@ -28,6 +28,12 @@ static_assert(sizeof(uint64) == 8, "Bad type size");
 typedef _Bool bool8;
 static_assert(sizeof(bool8) == 1, "Bad type size");
 
+typedef float float32;
+static_assert(sizeof(float32) == 4, "Bad type size");
+
+typedef double float64;
+static_assert(sizeof(float64) == 8, "Bad type size");
+
 #define true 1
 #define false 0
 #define null 0
@@ -35,9 +41,51 @@ static_assert(sizeof(bool8) == 1, "Bad type size");
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-static const char* GlobalProgramName = "Visual Timer";
+struct
+{
+    const char* ProgramName;
+    HWND MainWindow;
+    uint32 MainWindowWidth;
+    uint32 MainWindowHeight;
+    float32 MainWindowAlpha;
+} Globals;
 
-void DisplayError(uint32 ErrorCode)
+typedef struct
+{
+    union
+    {
+        struct
+        {
+            uint8 Red;
+            uint8 Green;
+            uint8 Blue;
+            uint8 Alpha;
+        };
+        uint32 Raw;
+    };
+} rgba32;
+
+rgba32 MakeColour(uint8 Red, uint8 Green, uint8 Blue, uint8 Alpha)
+{
+    rgba32 Colour;
+    Colour.Red = Red;
+    Colour.Green = Green;
+    Colour.Blue = Blue;
+    Colour.Alpha = Alpha;
+    return Colour;
+}
+
+void DisplayErrorMessage(const char* ErrorMessage)
+{
+    MessageBoxA(
+        Globals.MainWindow,
+        ErrorMessage,
+        Globals.ProgramName,
+        MB_OK |
+        MB_ICONEXCLAMATION);
+};
+
+void DisplayErrorCode(uint32 ErrorCode)
 {
     LPSTR ErrorMessage = NULL;
 
@@ -51,12 +99,7 @@ void DisplayError(uint32 ErrorCode)
         0, // Buffer Size
         null); // Arguments
 
-    MessageBoxA(
-        null, // Window
-        ErrorMessage,
-        GlobalProgramName,
-        MB_OK |
-        MB_ICONEXCLAMATION);
+    DisplayErrorMessage(ErrorMessage);
 
     LocalFree(ErrorMessage);
 };
@@ -69,8 +112,32 @@ LRESULT WindowProcedure(
 {
 	LRESULT Result = 0;
 
+    if (Globals.MainWindow && Window != Globals.MainWindow)
+    {
+        DisplayErrorMessage("Unexpected Window!");
+        PostQuitMessage(0);
+        return Result;
+    }
+
     switch (Message)
     {
+        case WM_PAINT:
+        {
+            PAINTSTRUCT Paint;
+            HDC DeviceContext = BeginPaint(Window, &Paint);
+            {
+                RECT WindowRect;
+                GetClientRect(Globals.MainWindow, &WindowRect);
+                Globals.MainWindowWidth = WindowRect.right - WindowRect.left;
+                Globals.MainWindowHeight = WindowRect.bottom - WindowRect.top;
+
+                rgba32 RectColour = MakeColour(255, 0, 0, 0);
+                HBRUSH RectBrush = CreateSolidBrush(RectColour.Raw);
+                FillRect(DeviceContext, &WindowRect, RectBrush);
+            }
+            EndPaint(Window, &Paint);
+        } break;
+
         case WM_CLOSE:
         case WM_DESTROY:
         {
@@ -96,10 +163,13 @@ int32 WinMain(
     LPSTR CommandLine,
     int32 ShowCommand)
 {
+    Globals.ProgramName = "Visual Timer";
+
     const char* WindowClassName = "VisualTimerMainWindow";
 
     WNDCLASSEXA WindowClass = { 0 };
     WindowClass.cbSize = sizeof(WNDCLASSEXA);
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW;
     WindowClass.lpfnWndProc = &WindowProcedure;
     WindowClass.hInstance = Instance;
     WindowClass.lpszClassName = WindowClassName;
@@ -108,35 +178,43 @@ int32 WinMain(
     if (RegisterClassExA(&WindowClass) == 0)
     {
         uint32 ErrorCode = GetLastError();
-        DisplayError(ErrorCode);
+        DisplayErrorCode(ErrorCode);
         return ErrorCode;
     }
 
-    uint32 WindowWidth = 512;
-    uint32 WindowHeight = 512;
+    Globals.MainWindowWidth = 512;
+    Globals.MainWindowHeight = 512;
 
-    HWND Window = CreateWindowExA(
-        0, // Extendend Style
+    Globals.MainWindow = CreateWindowExA(
+        WS_EX_LAYERED,
         WindowClassName,
-        GlobalProgramName,
+        Globals.ProgramName,
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, // X
         CW_USEDEFAULT, // Y
-        WindowWidth,
-        WindowHeight,
+        Globals.MainWindowWidth,
+        Globals.MainWindowHeight,
         null, // Parent
         null, // Menu
         Instance,
         null); // User Parameter
 
-    if (Window == null)
+    if (Globals.MainWindow == null)
     {
         uint32 ErrorCode = GetLastError();
-        DisplayError(ErrorCode);
+        DisplayErrorCode(ErrorCode);
         return ErrorCode;
     }
 
-    ShowWindow(Window, SW_NORMAL);
+    Globals.MainWindowAlpha = 0.5f;
+
+    SetLayeredWindowAttributes(
+        Globals.MainWindow,
+        0, // Key Colour (unused)
+        Globals.MainWindowAlpha * 255,
+        LWA_ALPHA);
+
+    ShowWindow(Globals.MainWindow, SW_NORMAL);
 
     bool8 IsRunning = true;
     uint32 ExitCode = 0;
@@ -153,7 +231,7 @@ int32 WinMain(
         if (MessageResult == -1)
         {
             uint32 ErrorCode = GetLastError();
-            DisplayError(ErrorCode);
+            DisplayErrorCode(ErrorCode);
             return ErrorCode;
         }
 
@@ -171,7 +249,7 @@ int32 WinMain(
 
     if (ExitCode != 0)
     {
-        DisplayError(ExitCode);
+        DisplayErrorCode(ExitCode);
     }
     return ExitCode;
 }

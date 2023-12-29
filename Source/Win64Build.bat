@@ -5,5 +5,5 @@ set SourceDir=..\Source
 
 if not exist %OutputDir% mkdir %OutputDir%
 pushd %OutputDir%
-cl /std:clatest /Zi %SourceDir%\VisualTimer.c user32.lib
+cl /std:clatest /Zi %SourceDir%\VisualTimer.c user32.lib gdi32.lib
 popd
