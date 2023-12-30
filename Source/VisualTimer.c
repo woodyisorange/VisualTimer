@@ -111,7 +111,7 @@ LRESULT WindowProcedure(
                 SetLayeredWindowAttributes(
                     Window,
                     0, // Key Colour (unused)
-                    Globals.WindowAlpha * 255,
+                    (uint8)(Globals.WindowAlpha * 255.0f),
                     LWA_ALPHA);
             }
             else
@@ -216,7 +216,7 @@ int32 WinMain(
     SetLayeredWindowAttributes(
         Window,
         0, // Key Colour (unused)
-        Globals.WindowAlpha * 255,
+        (uint8)(Globals.WindowAlpha * 255.0f),
         LWA_ALPHA);
 
     ShowWindow(Window, SW_NORMAL);
@@ -226,7 +226,7 @@ int32 WinMain(
     //
 
     bool8 IsRunning = true;
-    uint32 ExitCode = 0;
+    int32 ExitCode = 0;
     uint64 OldMilliseconds = GetTickCount64();
 
     while (IsRunning)
@@ -242,7 +242,7 @@ int32 WinMain(
             if (Message.message == WM_QUIT)
             {
                 IsRunning = false;
-                ExitCode = Message.wParam;
+                ExitCode = (int32)Message.wParam;
             }
             else
             {
@@ -309,8 +309,8 @@ int32 WinMain(
 
         FillRect(DeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
 
-        uint32 CircleRadius = ClientRadius * 0.9f;
-        uint32 InnerCircleRadius = ClientRadius * 0.5f;
+        int32 CircleRadius = (int32)((float32)ClientRadius * 0.9f);
+        int32 InnerCircleRadius = (int32)((float32)ClientRadius * 0.5f);
 
         float32 PercentRemaining = 1.0f;
         if (Globals.MillisecondsTotal > 0)
@@ -331,8 +331,8 @@ int32 WinMain(
             CenterY - CircleRadius,
             CenterX + CircleRadius,
             CenterY + CircleRadius,
-            CircleStartX,
-            CircleStartY,
+            (int32)CircleStartX,
+            (int32)CircleStartY,
             ClientWidth / 2,
             0);
 
@@ -358,7 +358,7 @@ int32 WinMain(
             MinutesRemaining,
             SecondsRemaining);
 
-        uint32 TextLength = strlen(Text);
+        int32 TextLength = (int32)strlen(Text);
 
         SIZE TextSize;
         TextSize.cx = 0;
