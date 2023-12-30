@@ -1,11 +1,8 @@
 
-//TODO: Set the icon for the exe file, taskbar, window etc.
-//TODO: Custom window? e.g. no title bar?
 //TODO: Use UpdateLayeredWindow() to have custom alpha?
-//TODO: Mouse input:
-//      - Scroll to add/remove time?
-//      - Shift+Scroll to set transparency?
-//      - Drag to move?
+//TODO: Mouse input: Drag to move
+//TODO: Once drag-to-move, remove title bar
+//TODO: Set the icon for the exe file, taskbar, window etc.
 
 typedef signed char int8;
 static_assert(sizeof(int8) == 1, "Bad type size");
@@ -57,6 +54,18 @@ static_assert(sizeof(float64) == 8, "Bad type size");
 #define MS_PER_MINUTE 60000
 #define MS_PER_HOUR 3600000
 
+#define MAX(A, B) (((A) > (B)) ? (A) : (B))
+#define MIN(A, B) (((A) < (B)) ? (A) : (B))
+#define CLAMP(A, Min, Max) MAX(MIN(A, Max), Min)
+
+struct globals
+{
+    uint64 MillisecondsTotal;
+    uint64 MillisecondsRemaining;
+    float32 WindowAlpha;
+} Globals;
+
+
 void DisplayError(HWND Window, const char* Title, uint32 ErrorCode)
 {
     LPSTR ErrorMessage = NULL;
@@ -90,6 +99,47 @@ LRESULT WindowProcedure(
     switch (Message)
     {
 
+        case WM_MOUSEWHEEL:
+        {
+            bool8 IsShifted = GET_KEYSTATE_WPARAM(WordParameter) & MK_SHIFT;
+            int32 Delta = GET_WHEEL_DELTA_WPARAM(WordParameter) / WHEEL_DELTA;
+
+            if (IsShifted)
+            {
+                Globals.WindowAlpha += 0.1f * Delta;
+                Globals.WindowAlpha = CLAMP(Globals.WindowAlpha, 0.1f, 1.0f);
+                SetLayeredWindowAttributes(
+                    Window,
+                    0, // Key Colour (unused)
+                    Globals.WindowAlpha * 255,
+                    LWA_ALPHA);
+            }
+            else
+            {
+                Delta *= MS_PER_MINUTE;
+
+                // Add to wherever the timer has got to
+                Globals.MillisecondsTotal = Globals.MillisecondsRemaining;
+
+                if (Delta < 0 && (Globals.MillisecondsTotal < -Delta))
+                {
+                    Globals.MillisecondsTotal = 0;
+                }
+                else
+                {
+                    Globals.MillisecondsTotal += Delta;
+
+                    // Round off to the nearest minute + a second from which the next tick will be
+                    // subtracted, displaying the round minute
+                    Globals.MillisecondsTotal -= Globals.MillisecondsTotal % MS_PER_MINUTE;
+                    Globals.MillisecondsTotal += MS_PER_SECOND;
+                }
+
+                // Restart the clock
+                Globals.MillisecondsRemaining = Globals.MillisecondsTotal;
+            }
+        } break;
+
         case WM_CLOSE:
         case WM_DESTROY:
         {
@@ -115,10 +165,14 @@ int32 WinMain(
     LPSTR CommandLine,
     int32 ShowCommand)
 {
+
+    //
+    // Setup + Create Window
+    //
+
     const char* ProgramName = "Visual Timer";
 
-    uint64 MillisecondsTotal = 90 * 60 * 1000;
-    uint64 MillisecondsRemaining = MillisecondsTotal;
+    memset(&Globals, 0, sizeof(Globals));
 
     const char* WindowClassName = "VisualTimerMainWindow";
 
@@ -138,7 +192,7 @@ int32 WinMain(
     }
 
     HWND Window = CreateWindowExA(
-        WS_EX_LAYERED,
+        WS_EX_LAYERED | WS_EX_TOPMOST,
         WindowClassName,
         ProgramName,
         WS_OVERLAPPEDWINDOW,
@@ -158,14 +212,18 @@ int32 WinMain(
         return ErrorCode;
     }
 
-    float WindowAlpha = 0.333f;
+    Globals.WindowAlpha += 0.4f;
     SetLayeredWindowAttributes(
         Window,
         0, // Key Colour (unused)
-        WindowAlpha * 255,
+        Globals.WindowAlpha * 255,
         LWA_ALPHA);
 
     ShowWindow(Window, SW_NORMAL);
+
+    //
+    // Main Loop
+    //
 
     bool8 IsRunning = true;
     uint32 ExitCode = 0;
@@ -173,6 +231,11 @@ int32 WinMain(
 
     while (IsRunning)
     {
+
+        //
+        // Pump Win32 Events
+        //
+
         MSG Message;
         while (PeekMessageA(&Message, null, 0, 0, PM_REMOVE))
         {
@@ -188,26 +251,30 @@ int32 WinMain(
             }
         }
 
+        //
+        // Tick timer
+        //
+
         uint64 NewMilliseconds = GetTickCount();
         uint64 DeltaMilliseconds = NewMilliseconds - OldMilliseconds;
         OldMilliseconds = NewMilliseconds;
 
-        if (MillisecondsRemaining > 0)
+        if (Globals.MillisecondsRemaining > 0)
         {
             // Cap timer to double digit hours
             uint64 MaxMilliseconds = (MS_PER_HOUR * 100) - MS_PER_SECOND;
-            if (MillisecondsRemaining > MaxMilliseconds)
+            if (Globals.MillisecondsRemaining > MaxMilliseconds)
             {
-                MillisecondsRemaining = MaxMilliseconds;
+                Globals.MillisecondsRemaining = MaxMilliseconds;
             }
 
-            if (DeltaMilliseconds < MillisecondsRemaining)
+            if (DeltaMilliseconds < Globals.MillisecondsRemaining)
             {
-                MillisecondsRemaining -= DeltaMilliseconds;
+                Globals.MillisecondsRemaining -= DeltaMilliseconds;
             }
             else
             {
-                MillisecondsRemaining = 0;
+                Globals.MillisecondsRemaining = 0;
                 MessageBoxA(
                     Window,
                     "The time has come.",
@@ -215,6 +282,10 @@ int32 WinMain(
                     MB_OK);
             }
         }
+
+        //
+        // Redraw Window
+        //
 
         RECT ClientRect;
         GetClientRect(Window, &ClientRect);
@@ -224,7 +295,7 @@ int32 WinMain(
         uint32 CenterX = ClientWidth / 2;
         uint32 CenterY = ClientHeight / 2;
 
-        uint32 ClientRadius = (ClientWidth < ClientHeight) ? (ClientWidth/2) : (ClientHeight/2);
+        uint32 ClientRadius = MIN(ClientWidth, ClientHeight) / 2;
 
         HDC DeviceContext = GetDC(Window);
 
@@ -241,11 +312,16 @@ int32 WinMain(
         uint32 CircleRadius = ClientRadius * 0.9f;
         uint32 InnerCircleRadius = ClientRadius * 0.5f;
 
-        float PercentRemaining = (float)MillisecondsRemaining / (float)MillisecondsTotal;
-        float StartAngleRadians = (TAU * -PercentRemaining) - (TAU * 0.5f);
+        float32 PercentRemaining = 1.0f;
+        if (Globals.MillisecondsTotal > 0)
+        {
+            PercentRemaining =
+                (float32)Globals.MillisecondsRemaining / (float32)Globals.MillisecondsTotal;
+        }
+        float32 StartAngleRadians = (TAU * -PercentRemaining) - (TAU * 0.5f);
 
-        float CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
-        float CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
+        float32 CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
+        float32 CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
 
         SetDCBrushColor(DeviceContext, TimerColour);
         SetDCPenColor(DeviceContext, ClearColour);
@@ -269,9 +345,9 @@ int32 WinMain(
             CenterX + InnerCircleRadius,
             CenterY + InnerCircleRadius);
 
-        uint64 SecondsRemaining = (MillisecondsRemaining % MS_PER_MINUTE) / MS_PER_SECOND;
-        uint64 MinutesRemaining = (MillisecondsRemaining % MS_PER_HOUR) / MS_PER_MINUTE;
-        uint64 HoursRemaining = MillisecondsRemaining / MS_PER_HOUR;
+        uint64 SecondsRemaining = (Globals.MillisecondsRemaining % MS_PER_MINUTE) / MS_PER_SECOND;
+        uint64 MinutesRemaining = (Globals.MillisecondsRemaining % MS_PER_HOUR) / MS_PER_MINUTE;
+        uint64 HoursRemaining = Globals.MillisecondsRemaining / MS_PER_HOUR;
 
         char Text[16];
         sprintf_s(
