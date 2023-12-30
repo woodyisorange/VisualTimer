@@ -1,5 +1,11 @@
 
 //TODO: Set the icon for the exe file, taskbar, window etc.
+//TODO: Custom window? e.g. no title bar?
+//TODO: Use UpdateLayeredWindow() to have custom alpha?
+//TODO: Mouse input:
+//      - Scroll to add/remove time?
+//      - Shift+Scroll to set transparency?
+//      - Drag to move?
 
 typedef signed char int8;
 static_assert(sizeof(int8) == 1, "Bad type size");
@@ -38,60 +44,25 @@ static_assert(sizeof(float64) == 8, "Bad type size");
 #define false 0
 #define null 0
 
+#define TAU 6.2831855f
+
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-struct
-{
-    const char* ProgramName;
-    HWND MainWindow;
-    uint32 MainWindowWidth;
-    uint32 MainWindowHeight;
-    float32 MainWindowAlpha;
-} Globals;
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
 
-typedef struct
-{
-    union
-    {
-        struct
-        {
-            uint8 Red;
-            uint8 Green;
-            uint8 Blue;
-            uint8 Alpha;
-        };
-        uint32 Raw;
-    };
-} rgba32;
+#define MS_PER_SECOND 1000
+#define MS_PER_MINUTE 60000
+#define MS_PER_HOUR 3600000
 
-rgba32 MakeColour(uint8 Red, uint8 Green, uint8 Blue, uint8 Alpha)
-{
-    rgba32 Colour;
-    Colour.Red = Red;
-    Colour.Green = Green;
-    Colour.Blue = Blue;
-    Colour.Alpha = Alpha;
-    return Colour;
-}
-
-void DisplayErrorMessage(const char* ErrorMessage)
-{
-    MessageBoxA(
-        Globals.MainWindow,
-        ErrorMessage,
-        Globals.ProgramName,
-        MB_OK |
-        MB_ICONEXCLAMATION);
-};
-
-void DisplayErrorCode(uint32 ErrorCode)
+void DisplayError(HWND Window, const char* Title, uint32 ErrorCode)
 {
     LPSTR ErrorMessage = NULL;
 
     FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER |
-        FORMAT_MESSAGE_FROM_SYSTEM,
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
         null, // Source
         ErrorCode,
         0, // LanguageId
@@ -99,7 +70,11 @@ void DisplayErrorCode(uint32 ErrorCode)
         0, // Buffer Size
         null); // Arguments
 
-    DisplayErrorMessage(ErrorMessage);
+    MessageBoxA(
+        Window,
+        ErrorMessage,
+        Title,
+        MB_OK | MB_ICONEXCLAMATION);
 
     LocalFree(ErrorMessage);
 };
@@ -112,31 +87,8 @@ LRESULT WindowProcedure(
 {
 	LRESULT Result = 0;
 
-    if (Globals.MainWindow && Window != Globals.MainWindow)
-    {
-        DisplayErrorMessage("Unexpected Window!");
-        PostQuitMessage(0);
-        return Result;
-    }
-
     switch (Message)
     {
-        case WM_PAINT:
-        {
-            PAINTSTRUCT Paint;
-            HDC DeviceContext = BeginPaint(Window, &Paint);
-            {
-                RECT WindowRect;
-                GetClientRect(Globals.MainWindow, &WindowRect);
-                Globals.MainWindowWidth = WindowRect.right - WindowRect.left;
-                Globals.MainWindowHeight = WindowRect.bottom - WindowRect.top;
-
-                rgba32 RectColour = MakeColour(255, 0, 0, 0);
-                HBRUSH RectBrush = CreateSolidBrush(RectColour.Raw);
-                FillRect(DeviceContext, &WindowRect, RectBrush);
-            }
-            EndPaint(Window, &Paint);
-        } break;
 
         case WM_CLOSE:
         case WM_DESTROY:
@@ -163,9 +115,10 @@ int32 WinMain(
     LPSTR CommandLine,
     int32 ShowCommand)
 {
-    ZeroMemory(&Globals, sizeof(Globals));
+    const char* ProgramName = "Visual Timer";
 
-    Globals.ProgramName = "Visual Timer";
+    uint64 MillisecondsTotal = 90 * 60 * 1000;
+    uint64 MillisecondsRemaining = MillisecondsTotal;
 
     const char* WindowClassName = "VisualTimerMainWindow";
 
@@ -180,78 +133,182 @@ int32 WinMain(
     if (RegisterClassExA(&WindowClass) == 0)
     {
         uint32 ErrorCode = GetLastError();
-        DisplayErrorCode(ErrorCode);
+        DisplayError(null, ProgramName, ErrorCode);
         return ErrorCode;
     }
 
-    Globals.MainWindowWidth = 512;
-    Globals.MainWindowHeight = 512;
-
-    Globals.MainWindow = CreateWindowExA(
+    HWND Window = CreateWindowExA(
         WS_EX_LAYERED,
         WindowClassName,
-        Globals.ProgramName,
+        ProgramName,
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, // X
         CW_USEDEFAULT, // Y
-        Globals.MainWindowWidth,
-        Globals.MainWindowHeight,
+        256, // Width
+        256, // Height
         null, // Parent
         null, // Menu
         Instance,
         null); // User Parameter
 
-    if (Globals.MainWindow == null)
+    if (Window == null)
     {
         uint32 ErrorCode = GetLastError();
-        DisplayErrorCode(ErrorCode);
+        DisplayError(Window, ProgramName, ErrorCode);
         return ErrorCode;
     }
 
-    Globals.MainWindowAlpha = 0.5f;
-
+    float WindowAlpha = 0.333f;
     SetLayeredWindowAttributes(
-        Globals.MainWindow,
+        Window,
         0, // Key Colour (unused)
-        Globals.MainWindowAlpha * 255,
+        WindowAlpha * 255,
         LWA_ALPHA);
 
-    ShowWindow(Globals.MainWindow, SW_NORMAL);
+    ShowWindow(Window, SW_NORMAL);
 
     bool8 IsRunning = true;
     uint32 ExitCode = 0;
+    uint64 OldMilliseconds = GetTickCount64();
 
     while (IsRunning)
     {
         MSG Message;
-        int8 MessageResult = GetMessage(
-            &Message,
-            null, // Window
-            0, // Min Message Filter
-            0); // Max Message Filter
-
-        if (MessageResult == -1)
+        while (PeekMessageA(&Message, null, 0, 0, PM_REMOVE))
         {
-            uint32 ErrorCode = GetLastError();
-            DisplayErrorCode(ErrorCode);
-            return ErrorCode;
+            if (Message.message == WM_QUIT)
+            {
+                IsRunning = false;
+                ExitCode = Message.wParam;
+            }
+            else
+            {
+                TranslateMessage(&Message);
+                DispatchMessage(&Message);
+            }
         }
 
-        if (Message.message == WM_QUIT)
+        uint64 NewMilliseconds = GetTickCount();
+        uint64 DeltaMilliseconds = NewMilliseconds - OldMilliseconds;
+        OldMilliseconds = NewMilliseconds;
+
+        if (MillisecondsRemaining > 0)
         {
-            IsRunning = false;
-            ExitCode = Message.wParam;
+            // Cap timer to double digit hours
+            uint64 MaxMilliseconds = (MS_PER_HOUR * 100) - MS_PER_SECOND;
+            if (MillisecondsRemaining > MaxMilliseconds)
+            {
+                MillisecondsRemaining = MaxMilliseconds;
+            }
+
+            if (DeltaMilliseconds < MillisecondsRemaining)
+            {
+                MillisecondsRemaining -= DeltaMilliseconds;
+            }
+            else
+            {
+                MillisecondsRemaining = 0;
+                MessageBoxA(
+                    Window,
+                    "The time has come.",
+                    ProgramName,
+                    MB_OK);
+            }
         }
-        else
-        {
-            TranslateMessage(&Message);
-            DispatchMessage(&Message);
-        }
+
+        RECT ClientRect;
+        GetClientRect(Window, &ClientRect);
+        uint32 ClientWidth = ClientRect.right - ClientRect.left;
+        uint32 ClientHeight = ClientRect.bottom - ClientRect.top;
+
+        uint32 CenterX = ClientWidth / 2;
+        uint32 CenterY = ClientHeight / 2;
+
+        uint32 ClientRadius = (ClientWidth < ClientHeight) ? (ClientWidth/2) : (ClientHeight/2);
+
+        HDC DeviceContext = GetDC(Window);
+
+        COLORREF ClearColour = 0x00FFFFFF;
+        COLORREF TimerColour = 0x000000FF;
+
+        HGDIOBJ OriginalBrush = SelectObject(DeviceContext, GetStockObject(DC_BRUSH));
+        COLORREF OriginalDcBrushColour = SetDCBrushColor(DeviceContext, ClearColour);
+        HGDIOBJ OriginalPen = SelectObject(DeviceContext, GetStockObject(DC_PEN));
+        COLORREF OriginalDcPenColour = SetDCPenColor(DeviceContext, ClearColour);
+
+        FillRect(DeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
+
+        uint32 CircleRadius = ClientRadius * 0.9f;
+        uint32 InnerCircleRadius = ClientRadius * 0.5f;
+
+        float PercentRemaining = (float)MillisecondsRemaining / (float)MillisecondsTotal;
+        float StartAngleRadians = (TAU * -PercentRemaining) - (TAU * 0.5f);
+
+        float CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
+        float CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
+
+        SetDCBrushColor(DeviceContext, TimerColour);
+        SetDCPenColor(DeviceContext, ClearColour);
+        Pie(
+            DeviceContext,
+            CenterX - CircleRadius,
+            CenterY - CircleRadius,
+            CenterX + CircleRadius,
+            CenterY + CircleRadius,
+            CircleStartX,
+            CircleStartY,
+            ClientWidth / 2,
+            0);
+
+        SetDCBrushColor(DeviceContext, ClearColour);
+        SetDCPenColor(DeviceContext, ClearColour);
+        Ellipse(
+            DeviceContext,
+            CenterX - InnerCircleRadius,
+            CenterY - InnerCircleRadius,
+            CenterX + InnerCircleRadius,
+            CenterY + InnerCircleRadius);
+
+        uint64 SecondsRemaining = (MillisecondsRemaining % MS_PER_MINUTE) / MS_PER_SECOND;
+        uint64 MinutesRemaining = (MillisecondsRemaining % MS_PER_HOUR) / MS_PER_MINUTE;
+        uint64 HoursRemaining = MillisecondsRemaining / MS_PER_HOUR;
+
+        char Text[16];
+        sprintf_s(
+            Text,
+            sizeof(Text),
+            "%02llu:%02llu:%02llu",
+            HoursRemaining,
+            MinutesRemaining,
+            SecondsRemaining);
+
+        uint32 TextLength = strlen(Text);
+
+        SIZE TextSize;
+        TextSize.cx = 0;
+        TextSize.cy = 0;
+
+        GetTextExtentPoint32A(DeviceContext, Text, TextLength, &TextSize);
+
+        TextOutA(
+            DeviceContext,
+            CenterX - (TextSize.cx/2),
+            CenterY - (TextSize.cy/2),
+            Text,
+            TextLength);
+
+        SetDCBrushColor(DeviceContext, OriginalDcBrushColour);
+        SelectObject(DeviceContext, OriginalBrush);
+        SetDCPenColor(DeviceContext, OriginalDcPenColour);
+        SelectObject(DeviceContext, OriginalPen);
+        ReleaseDC(Window, DeviceContext);
+
+        Sleep(50);
     }
 
     if (ExitCode != 0)
     {
-        DisplayErrorCode(ExitCode);
+        DisplayError(Window, ProgramName, ExitCode);
     }
     return ExitCode;
 }
