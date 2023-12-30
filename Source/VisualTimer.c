@@ -2,7 +2,13 @@
 //TODO: Use UpdateLayeredWindow() to have custom alpha?
 //TODO: Mouse input: Drag to move
 //TODO: Once drag-to-move, remove title bar
+//TODO: Understand resource files and rc.exe so that:
 //TODO: Set the icon for the exe file, taskbar, window etc.
+//TODO: Backbuffer for GDI
+//TODO: Help text?
+//TODO: Type in remaining work?
+//TODO: (later) Smoother custom drawing?
+//TODO: (later) OpenGl to replace GDI?
 
 typedef signed char int8;
 static_assert(sizeof(int8) == 1, "Bad type size");
@@ -65,7 +71,6 @@ struct globals
     float32 WindowAlpha;
 } Globals;
 
-
 void DisplayError(HWND Window, const char* Title, uint32 ErrorCode)
 {
     LPSTR ErrorMessage = NULL;
@@ -86,7 +91,7 @@ void DisplayError(HWND Window, const char* Title, uint32 ErrorCode)
         MB_OK | MB_ICONEXCLAMATION);
 
     LocalFree(ErrorMessage);
-};
+}
 
 LRESULT WindowProcedure(
     HWND Window,
