@@ -227,6 +227,10 @@ int32 WinMain(
 
     ShowWindow(Window, SW_NORMAL);
 
+    HBITMAP BackBuffer = null;
+    uint32 BackBufferWidth = 0;
+    uint32 BackBufferHeight = 0;
+
     //
     // Main Loop
     //
@@ -297,6 +301,9 @@ int32 WinMain(
         // Redraw Window
         //
         {
+            COLORREF ClearColour = 0x00FFFFFF;
+            COLORREF TimerColour = 0x000000FF;
+
             RECT ClientRect;
             GetClientRect(Window, &ClientRect);
             uint32 ClientWidth = ClientRect.right - ClientRect.left;
@@ -307,17 +314,51 @@ int32 WinMain(
 
             uint32 ClientRadius = MIN(ClientWidth, ClientHeight) / 2;
 
-            HDC DeviceContext = GetDC(Window);
+            HDC WindowDeviceContext = GetDC(Window);
 
-            COLORREF ClearColour = 0x00FFFFFF;
-            COLORREF TimerColour = 0x000000FF;
+            if (ClientWidth != BackBufferWidth || ClientHeight != BackBufferHeight)
+            {
+                if (BackBuffer)
+                {
+                    DeleteObject(BackBuffer);
+                }
 
-            HGDIOBJ OriginalBrush = SelectObject(DeviceContext, GetStockObject(DC_BRUSH));
-            COLORREF OriginalDcBrushColour = SetDCBrushColor(DeviceContext, ClearColour);
-            HGDIOBJ OriginalPen = SelectObject(DeviceContext, GetStockObject(DC_PEN));
-            COLORREF OriginalDcPenColour = SetDCPenColor(DeviceContext, ClearColour);
+                BackBufferWidth = ClientWidth;
+                BackBufferHeight = ClientHeight;
+                BackBuffer = CreateCompatibleBitmap(
+                    WindowDeviceContext,
+                    BackBufferWidth,
+                    BackBufferHeight);
 
-            FillRect(DeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
+                if (!BackBuffer)
+                {
+                    uint32 ErrorCode = GetLastError();
+                    DisplayError(Window, ProgramName, ErrorCode);
+                    return ErrorCode;
+                }
+            }
+
+            HDC BackBufferDeviceContext = CreateCompatibleDC(WindowDeviceContext);
+
+            HBITMAP OriginalBitmap = SelectObject(BackBufferDeviceContext, BackBuffer);
+
+            HGDIOBJ OriginalBrush = SelectObject(
+                BackBufferDeviceContext,
+                GetStockObject(DC_BRUSH));
+
+            COLORREF OriginalDcBrushColour = SetDCBrushColor(
+                BackBufferDeviceContext,
+                ClearColour);
+
+            HGDIOBJ OriginalPen = SelectObject(
+                BackBufferDeviceContext,
+                GetStockObject(DC_PEN));
+
+            COLORREF OriginalDcPenColour = SetDCPenColor(
+                BackBufferDeviceContext,
+                ClearColour);
+
+            FillRect(BackBufferDeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
 
             int32 CircleRadius = (int32)((float32)ClientRadius * 0.9f);
             int32 InnerCircleRadius = (int32)((float32)ClientRadius * 0.5f);
@@ -333,10 +374,10 @@ int32 WinMain(
             float32 CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
             float32 CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
 
-            SetDCBrushColor(DeviceContext, TimerColour);
-            SetDCPenColor(DeviceContext, ClearColour);
+            SetDCBrushColor(BackBufferDeviceContext, TimerColour);
+            SetDCPenColor(BackBufferDeviceContext, ClearColour);
             Pie(
-                DeviceContext,
+                BackBufferDeviceContext,
                 CenterX - CircleRadius,
                 CenterY - CircleRadius,
                 CenterX + CircleRadius,
@@ -346,10 +387,10 @@ int32 WinMain(
                 ClientWidth / 2,
                 0);
 
-            SetDCBrushColor(DeviceContext, ClearColour);
-            SetDCPenColor(DeviceContext, ClearColour);
+            SetDCBrushColor(BackBufferDeviceContext, ClearColour);
+            SetDCPenColor(BackBufferDeviceContext, ClearColour);
             Ellipse(
-                DeviceContext,
+                BackBufferDeviceContext,
                 CenterX - InnerCircleRadius,
                 CenterY - InnerCircleRadius,
                 CenterX + InnerCircleRadius,
@@ -378,20 +419,37 @@ int32 WinMain(
             TextSize.cx = 0;
             TextSize.cy = 0;
 
-            GetTextExtentPoint32A(DeviceContext, Text, TextLength, &TextSize);
+            GetTextExtentPoint32A(BackBufferDeviceContext, Text, TextLength, &TextSize);
 
             TextOutA(
-                DeviceContext,
+                BackBufferDeviceContext,
                 CenterX - (TextSize.cx/2),
                 CenterY - (TextSize.cy/2),
                 Text,
                 TextLength);
 
-            SetDCBrushColor(DeviceContext, OriginalDcBrushColour);
-            SelectObject(DeviceContext, OriginalBrush);
-            SetDCPenColor(DeviceContext, OriginalDcPenColour);
-            SelectObject(DeviceContext, OriginalPen);
-            ReleaseDC(Window, DeviceContext);
+            BitBlt(
+                WindowDeviceContext,
+                0,
+                0,
+                BackBufferWidth,
+                BackBufferHeight,
+                BackBufferDeviceContext,
+                0,
+                0,
+                SRCCOPY);
+
+            SetDCBrushColor(BackBufferDeviceContext, OriginalDcBrushColour);
+            SelectObject(BackBufferDeviceContext, OriginalBrush);
+
+            SetDCPenColor(BackBufferDeviceContext, OriginalDcPenColour);
+            SelectObject(BackBufferDeviceContext, OriginalPen);
+
+            OriginalBitmap = SelectObject(BackBufferDeviceContext, OriginalBitmap);
+
+            DeleteDC(BackBufferDeviceContext);
+
+            ReleaseDC(Window, WindowDeviceContext);
         }
 
         WaitMessage();
