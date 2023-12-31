@@ -60,6 +60,8 @@ static_assert(sizeof(float64) == 8, "Bad type size");
 #define MS_PER_MINUTE 60000
 #define MS_PER_HOUR 3600000
 
+#define TICK_TIMER_ID 1
+
 #define MAX(A, B) (((A) > (B)) ? (A) : (B))
 #define MIN(A, B) (((A) < (B)) ? (A) : (B))
 #define CLAMP(A, Min, Max) MAX(MIN(A, Max), Min)
@@ -103,7 +105,6 @@ LRESULT WindowProcedure(
 
     switch (Message)
     {
-
         case WM_MOUSEWHEEL:
         {
             bool8 IsShifted = GET_KEYSTATE_WPARAM(WordParameter) & MK_SHIFT;
@@ -234,9 +235,11 @@ int32 WinMain(
     int32 ExitCode = 0;
     uint64 OldMilliseconds = GetTickCount64();
 
+    // Use a timer to tick our main loop by triggering a WM_TIMER message
+    SetTimer(Window, TICK_TIMER_ID, MS_PER_SECOND/10, (TIMERPROC)null);
+
     while (IsRunning)
     {
-
         //
         // Pump Win32 Events
         //
@@ -391,7 +394,7 @@ int32 WinMain(
             ReleaseDC(Window, DeviceContext);
         }
 
-        Sleep(50);
+        WaitMessage();
     }
 
     if (ExitCode != 0)
