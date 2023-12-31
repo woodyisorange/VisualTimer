@@ -240,149 +240,156 @@ int32 WinMain(
         //
         // Pump Win32 Events
         //
-
-        MSG Message;
-        while (PeekMessageA(&Message, null, 0, 0, PM_REMOVE))
         {
-            if (Message.message == WM_QUIT)
+            MSG Message;
+            while (PeekMessageA(&Message, null, 0, 0, PM_REMOVE))
             {
-                IsRunning = false;
-                ExitCode = (int32)Message.wParam;
-            }
-            else
-            {
-                TranslateMessage(&Message);
-                DispatchMessage(&Message);
+                if (Message.message == WM_QUIT)
+                {
+                    IsRunning = false;
+                    ExitCode = (int32)Message.wParam;
+                }
+                else
+                {
+                    TranslateMessage(&Message);
+                    DispatchMessage(&Message);
+                }
             }
         }
 
         //
         // Tick timer
         //
-
-        uint64 NewMilliseconds = GetTickCount();
-        uint64 DeltaMilliseconds = NewMilliseconds - OldMilliseconds;
-        OldMilliseconds = NewMilliseconds;
-
-        if (Globals.MillisecondsRemaining > 0)
         {
-            // Cap timer to double digit hours
-            uint64 MaxMilliseconds = (MS_PER_HOUR * 100) - MS_PER_SECOND;
-            if (Globals.MillisecondsRemaining > MaxMilliseconds)
-            {
-                Globals.MillisecondsRemaining = MaxMilliseconds;
-            }
+            uint64 NewMilliseconds = GetTickCount();
+            uint64 DeltaMilliseconds = NewMilliseconds - OldMilliseconds;
+            OldMilliseconds = NewMilliseconds;
 
-            if (DeltaMilliseconds < Globals.MillisecondsRemaining)
+            if (Globals.MillisecondsRemaining > 0)
             {
-                Globals.MillisecondsRemaining -= DeltaMilliseconds;
-            }
-            else
-            {
-                Globals.MillisecondsRemaining = 0;
-                MessageBoxA(
-                    Window,
-                    "The time has come.",
-                    ProgramName,
-                    MB_OK);
+                // Cap timer to double digit hours
+                uint64 MaxMilliseconds = (MS_PER_HOUR * 100) - MS_PER_SECOND;
+                if (Globals.MillisecondsRemaining > MaxMilliseconds)
+                {
+                    Globals.MillisecondsRemaining = MaxMilliseconds;
+                }
+
+                if (DeltaMilliseconds < Globals.MillisecondsRemaining)
+                {
+                    Globals.MillisecondsRemaining -= DeltaMilliseconds;
+                }
+                else
+                {
+                    Globals.MillisecondsRemaining = 0;
+                    MessageBoxA(
+                        Window,
+                        "The time has come.",
+                        ProgramName,
+                        MB_OK);
+                }
             }
         }
 
         //
         // Redraw Window
         //
-
-        RECT ClientRect;
-        GetClientRect(Window, &ClientRect);
-        uint32 ClientWidth = ClientRect.right - ClientRect.left;
-        uint32 ClientHeight = ClientRect.bottom - ClientRect.top;
-
-        uint32 CenterX = ClientWidth / 2;
-        uint32 CenterY = ClientHeight / 2;
-
-        uint32 ClientRadius = MIN(ClientWidth, ClientHeight) / 2;
-
-        HDC DeviceContext = GetDC(Window);
-
-        COLORREF ClearColour = 0x00FFFFFF;
-        COLORREF TimerColour = 0x000000FF;
-
-        HGDIOBJ OriginalBrush = SelectObject(DeviceContext, GetStockObject(DC_BRUSH));
-        COLORREF OriginalDcBrushColour = SetDCBrushColor(DeviceContext, ClearColour);
-        HGDIOBJ OriginalPen = SelectObject(DeviceContext, GetStockObject(DC_PEN));
-        COLORREF OriginalDcPenColour = SetDCPenColor(DeviceContext, ClearColour);
-
-        FillRect(DeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
-
-        int32 CircleRadius = (int32)((float32)ClientRadius * 0.9f);
-        int32 InnerCircleRadius = (int32)((float32)ClientRadius * 0.5f);
-
-        float32 PercentRemaining = 1.0f;
-        if (Globals.MillisecondsTotal > 0)
         {
-            PercentRemaining =
-                (float32)Globals.MillisecondsRemaining / (float32)Globals.MillisecondsTotal;
+            RECT ClientRect;
+            GetClientRect(Window, &ClientRect);
+            uint32 ClientWidth = ClientRect.right - ClientRect.left;
+            uint32 ClientHeight = ClientRect.bottom - ClientRect.top;
+
+            uint32 CenterX = ClientWidth / 2;
+            uint32 CenterY = ClientHeight / 2;
+
+            uint32 ClientRadius = MIN(ClientWidth, ClientHeight) / 2;
+
+            HDC DeviceContext = GetDC(Window);
+
+            COLORREF ClearColour = 0x00FFFFFF;
+            COLORREF TimerColour = 0x000000FF;
+
+            HGDIOBJ OriginalBrush = SelectObject(DeviceContext, GetStockObject(DC_BRUSH));
+            COLORREF OriginalDcBrushColour = SetDCBrushColor(DeviceContext, ClearColour);
+            HGDIOBJ OriginalPen = SelectObject(DeviceContext, GetStockObject(DC_PEN));
+            COLORREF OriginalDcPenColour = SetDCPenColor(DeviceContext, ClearColour);
+
+            FillRect(DeviceContext, &ClientRect, GetStockObject(DC_BRUSH));
+
+            int32 CircleRadius = (int32)((float32)ClientRadius * 0.9f);
+            int32 InnerCircleRadius = (int32)((float32)ClientRadius * 0.5f);
+
+            float32 PercentRemaining = 1.0f;
+            if (Globals.MillisecondsTotal > 0)
+            {
+                PercentRemaining =
+                    (float32)Globals.MillisecondsRemaining / (float32)Globals.MillisecondsTotal;
+            }
+            float32 StartAngleRadians = (TAU * -PercentRemaining) - (TAU * 0.5f);
+
+            float32 CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
+            float32 CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
+
+            SetDCBrushColor(DeviceContext, TimerColour);
+            SetDCPenColor(DeviceContext, ClearColour);
+            Pie(
+                DeviceContext,
+                CenterX - CircleRadius,
+                CenterY - CircleRadius,
+                CenterX + CircleRadius,
+                CenterY + CircleRadius,
+                (int32)CircleStartX,
+                (int32)CircleStartY,
+                ClientWidth / 2,
+                0);
+
+            SetDCBrushColor(DeviceContext, ClearColour);
+            SetDCPenColor(DeviceContext, ClearColour);
+            Ellipse(
+                DeviceContext,
+                CenterX - InnerCircleRadius,
+                CenterY - InnerCircleRadius,
+                CenterX + InnerCircleRadius,
+                CenterY + InnerCircleRadius);
+
+            uint64 SecondsRemaining =
+                (Globals.MillisecondsRemaining % MS_PER_MINUTE) / MS_PER_SECOND;
+
+            uint64 MinutesRemaining =
+                (Globals.MillisecondsRemaining % MS_PER_HOUR) / MS_PER_MINUTE;
+
+            uint64 HoursRemaining = Globals.MillisecondsRemaining / MS_PER_HOUR;
+
+            char Text[16];
+            sprintf_s(
+                Text,
+                sizeof(Text),
+                "%02llu:%02llu:%02llu",
+                HoursRemaining,
+                MinutesRemaining,
+                SecondsRemaining);
+
+            int32 TextLength = (int32)strlen(Text);
+
+            SIZE TextSize;
+            TextSize.cx = 0;
+            TextSize.cy = 0;
+
+            GetTextExtentPoint32A(DeviceContext, Text, TextLength, &TextSize);
+
+            TextOutA(
+                DeviceContext,
+                CenterX - (TextSize.cx/2),
+                CenterY - (TextSize.cy/2),
+                Text,
+                TextLength);
+
+            SetDCBrushColor(DeviceContext, OriginalDcBrushColour);
+            SelectObject(DeviceContext, OriginalBrush);
+            SetDCPenColor(DeviceContext, OriginalDcPenColour);
+            SelectObject(DeviceContext, OriginalPen);
+            ReleaseDC(Window, DeviceContext);
         }
-        float32 StartAngleRadians = (TAU * -PercentRemaining) - (TAU * 0.5f);
-
-        float32 CircleStartX = sinf(StartAngleRadians) * CircleRadius + CenterX;
-        float32 CircleStartY = cosf(StartAngleRadians) * CircleRadius + CenterY;
-
-        SetDCBrushColor(DeviceContext, TimerColour);
-        SetDCPenColor(DeviceContext, ClearColour);
-        Pie(
-            DeviceContext,
-            CenterX - CircleRadius,
-            CenterY - CircleRadius,
-            CenterX + CircleRadius,
-            CenterY + CircleRadius,
-            (int32)CircleStartX,
-            (int32)CircleStartY,
-            ClientWidth / 2,
-            0);
-
-        SetDCBrushColor(DeviceContext, ClearColour);
-        SetDCPenColor(DeviceContext, ClearColour);
-        Ellipse(
-            DeviceContext,
-            CenterX - InnerCircleRadius,
-            CenterY - InnerCircleRadius,
-            CenterX + InnerCircleRadius,
-            CenterY + InnerCircleRadius);
-
-        uint64 SecondsRemaining = (Globals.MillisecondsRemaining % MS_PER_MINUTE) / MS_PER_SECOND;
-        uint64 MinutesRemaining = (Globals.MillisecondsRemaining % MS_PER_HOUR) / MS_PER_MINUTE;
-        uint64 HoursRemaining = Globals.MillisecondsRemaining / MS_PER_HOUR;
-
-        char Text[16];
-        sprintf_s(
-            Text,
-            sizeof(Text),
-            "%02llu:%02llu:%02llu",
-            HoursRemaining,
-            MinutesRemaining,
-            SecondsRemaining);
-
-        int32 TextLength = (int32)strlen(Text);
-
-        SIZE TextSize;
-        TextSize.cx = 0;
-        TextSize.cy = 0;
-
-        GetTextExtentPoint32A(DeviceContext, Text, TextLength, &TextSize);
-
-        TextOutA(
-            DeviceContext,
-            CenterX - (TextSize.cx/2),
-            CenterY - (TextSize.cy/2),
-            Text,
-            TextLength);
-
-        SetDCBrushColor(DeviceContext, OriginalDcBrushColour);
-        SelectObject(DeviceContext, OriginalBrush);
-        SetDCPenColor(DeviceContext, OriginalDcPenColour);
-        SelectObject(DeviceContext, OriginalPen);
-        ReleaseDC(Window, DeviceContext);
 
         Sleep(50);
     }
