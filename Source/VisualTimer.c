@@ -1,12 +1,12 @@
 
+//TODO: Arrow key input
 //TODO: Use UpdateLayeredWindow() to have custom alpha?
 //TODO: Mouse input: Drag to move
 //TODO: Once drag-to-move, remove title bar
 //TODO: Understand resource files and rc.exe so that:
 //TODO: Set the icon for the exe file, taskbar, window etc.
-//TODO: Backbuffer for GDI
 //TODO: Help text?
-//TODO: Type in remaining work?
+//TODO: Type in remaining time?
 //TODO: (later) Smoother custom drawing?
 //TODO: (later) OpenGl to replace GDI?
 
