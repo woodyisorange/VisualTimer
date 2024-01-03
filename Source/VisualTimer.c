@@ -1,11 +1,11 @@
 
-//TODO: Arrow key input
 //TODO: Use UpdateLayeredWindow() to have custom alpha?
 //TODO: Mouse input: Drag to move
 //TODO: Once drag-to-move, remove title bar
 //TODO: Understand resource files and rc.exe so that:
 //TODO: Set the icon for the exe file, taskbar, window etc.
-//TODO: Help text?
+//TODO: Right-Click for Help text?
+//TODO: Right-Click to Quit?
 //TODO: Cooldown instead of deliberate off-by-one when setting timer
 //TODO: Type in remaining time?
 //TODO: (later) Smoother custom drawing?
@@ -71,6 +71,8 @@ struct globals
 {
     uint64 MillisecondsTotal;
     uint64 MillisecondsRemaining;
+
+    HWND WindowHandle;
     float32 WindowAlpha;
 } Globals;
 
@@ -96,6 +98,43 @@ void DisplayError(HWND Window, const char* Title, uint32 ErrorCode)
     LocalFree(ErrorMessage);
 }
 
+void IncrementGlobalTimer(bool8 UseLargerIncrements, int32 IncrementCount)
+{
+    int32 Increment = UseLargerIncrements ? (5 * MS_PER_MINUTE) : (1 * MS_PER_MINUTE);
+    int64 Delta = Increment * IncrementCount;
+
+    // Add to wherever the timer has got to
+    Globals.MillisecondsTotal = Globals.MillisecondsRemaining;
+
+    if (Delta < 0 && (Globals.MillisecondsTotal < (uint64)(-Delta)))
+    {
+        Globals.MillisecondsTotal = 0;
+    }
+    else
+    {
+        Globals.MillisecondsTotal += Delta;
+
+        // Round off to the nearest increment + a second from which the next tick will
+        // be subtracted, displaying the round minute
+        Globals.MillisecondsTotal -= Globals.MillisecondsTotal % Increment;
+        Globals.MillisecondsTotal += MS_PER_SECOND;
+    }
+
+    // Restart the clock
+    Globals.MillisecondsRemaining = Globals.MillisecondsTotal;
+}
+
+void IncrementGlobalWindowAlpha(int32 IncrementCount)
+{
+    Globals.WindowAlpha += 0.1f * IncrementCount;
+    Globals.WindowAlpha = CLAMP(Globals.WindowAlpha, 0.1f, 1.0f);
+    SetLayeredWindowAttributes(
+        Globals.WindowHandle,
+        0, // Key Colour (unused)
+        (uint8)(Globals.WindowAlpha * 255.0f),
+        LWA_ALPHA);
+}
+
 LRESULT WindowProcedure(
     HWND Window,
     UINT Message,
@@ -108,44 +147,51 @@ LRESULT WindowProcedure(
     {
         case WM_MOUSEWHEEL:
         {
-            bool8 IsCtrlDown = GET_KEYSTATE_WPARAM(WordParameter) & MK_CONTROL;
-            bool8 IsShiftDown = GET_KEYSTATE_WPARAM(WordParameter) & MK_SHIFT;
-            int32 Delta = GET_WHEEL_DELTA_WPARAM(WordParameter) / WHEEL_DELTA;
+            bool8 IsCtrlDown = GetKeyState(VK_CONTROL) < 0;
+            bool8 IsShiftDown = GetKeyState(VK_SHIFT) < 0;
+            int32 IncrementCount = GET_WHEEL_DELTA_WPARAM(WordParameter) / WHEEL_DELTA;
 
             if (IsCtrlDown)
             {
-                uint32 Increment = IsShiftDown ? (5 * MS_PER_MINUTE) : (1 * MS_PER_MINUTE);
-                Delta *= Increment;
-
-                // Add to wherever the timer has got to
-                Globals.MillisecondsTotal = Globals.MillisecondsRemaining;
-
-                if (Delta < 0 && (Globals.MillisecondsTotal < -Delta))
-                {
-                    Globals.MillisecondsTotal = 0;
-                }
-                else
-                {
-                    Globals.MillisecondsTotal += Delta;
-
-                    // Round off to the nearest increment + a second from which the next tick will
-                    // be subtracted, displaying the round minute
-                    Globals.MillisecondsTotal -= Globals.MillisecondsTotal % Increment;
-                    Globals.MillisecondsTotal += MS_PER_SECOND;
-                }
-
-                // Restart the clock
-                Globals.MillisecondsRemaining = Globals.MillisecondsTotal;
+                bool8 UseLargerIncrements = IsShiftDown;
+                IncrementGlobalTimer(UseLargerIncrements, IncrementCount);
             }
             else if (IsShiftDown)
             {
-                Globals.WindowAlpha += 0.1f * Delta;
-                Globals.WindowAlpha = CLAMP(Globals.WindowAlpha, 0.1f, 1.0f);
-                SetLayeredWindowAttributes(
-                    Window,
-                    0, // Key Colour (unused)
-                    (uint8)(Globals.WindowAlpha * 255.0f),
-                    LWA_ALPHA);
+                IncrementGlobalWindowAlpha(IncrementCount);
+            }
+        } break;
+
+        case WM_KEYDOWN:
+        {
+            bool8 IsCtrlDown = GetKeyState(VK_CONTROL) < 0;
+            bool8 IsShiftDown = GetKeyState(VK_SHIFT) < 0;
+            int32 IncrementCount = 0;
+
+            switch (WordParameter)
+            {
+                case VK_UP:
+                {
+                    IncrementCount = 1;
+                } break;
+
+                case VK_DOWN:
+                {
+                    IncrementCount = -1;
+                } break;
+            }
+
+            if (IncrementCount != 0)
+            {
+                if (IsCtrlDown)
+                {
+                    bool8 UseLargerIncrements = IsShiftDown;
+                    IncrementGlobalTimer(UseLargerIncrements, IncrementCount);
+                }
+                else if (IsShiftDown)
+                {
+                    IncrementGlobalWindowAlpha(IncrementCount);
+                }
             }
 
         } break;
@@ -201,7 +247,7 @@ int32 WinMain(
         return ErrorCode;
     }
 
-    HWND Window = CreateWindowExA(
+    Globals.WindowHandle = CreateWindowExA(
         WS_EX_LAYERED | WS_EX_TOPMOST,
         WindowClassName,
         ProgramName,
@@ -215,21 +261,21 @@ int32 WinMain(
         Instance,
         null); // User Parameter
 
-    if (Window == null)
+    if (Globals.WindowHandle == null)
     {
         uint32 ErrorCode = GetLastError();
-        DisplayError(Window, ProgramName, ErrorCode);
+        DisplayError(Globals.WindowHandle, ProgramName, ErrorCode);
         return ErrorCode;
     }
 
     Globals.WindowAlpha += 0.4f;
     SetLayeredWindowAttributes(
-        Window,
+        Globals.WindowHandle,
         0, // Key Colour (unused)
         (uint8)(Globals.WindowAlpha * 255.0f),
         LWA_ALPHA);
 
-    ShowWindow(Window, SW_NORMAL);
+    ShowWindow(Globals.WindowHandle, SW_NORMAL);
 
     HBITMAP BackBuffer = null;
     uint32 BackBufferWidth = 0;
@@ -244,7 +290,7 @@ int32 WinMain(
     uint64 OldMilliseconds = GetTickCount64();
 
     // Use a timer to tick our main loop by triggering a WM_TIMER message
-    SetTimer(Window, TICK_TIMER_ID, MS_PER_SECOND/10, (TIMERPROC)null);
+    SetTimer(Globals.WindowHandle, TICK_TIMER_ID, MS_PER_SECOND/10, (TIMERPROC)null);
 
     while (IsRunning)
     {
@@ -293,7 +339,7 @@ int32 WinMain(
                 {
                     Globals.MillisecondsRemaining = 0;
                     MessageBoxA(
-                        Window,
+                        Globals.WindowHandle,
                         "The time has come.",
                         ProgramName,
                         MB_OK);
@@ -309,7 +355,7 @@ int32 WinMain(
             COLORREF TimerColour = 0x000000FF;
 
             RECT ClientRect;
-            GetClientRect(Window, &ClientRect);
+            GetClientRect(Globals.WindowHandle, &ClientRect);
             uint32 ClientWidth = ClientRect.right - ClientRect.left;
             uint32 ClientHeight = ClientRect.bottom - ClientRect.top;
 
@@ -318,7 +364,7 @@ int32 WinMain(
 
             uint32 ClientRadius = MIN(ClientWidth, ClientHeight) / 2;
 
-            HDC WindowDeviceContext = GetDC(Window);
+            HDC WindowDeviceContext = GetDC(Globals.WindowHandle);
 
             if (ClientWidth != BackBufferWidth || ClientHeight != BackBufferHeight)
             {
@@ -337,7 +383,7 @@ int32 WinMain(
                 if (!BackBuffer)
                 {
                     uint32 ErrorCode = GetLastError();
-                    DisplayError(Window, ProgramName, ErrorCode);
+                    DisplayError(Globals.WindowHandle, ProgramName, ErrorCode);
                     return ErrorCode;
                 }
             }
@@ -453,7 +499,7 @@ int32 WinMain(
 
             DeleteDC(BackBufferDeviceContext);
 
-            ReleaseDC(Window, WindowDeviceContext);
+            ReleaseDC(Globals.WindowHandle, WindowDeviceContext);
         }
 
         WaitMessage();
@@ -461,7 +507,7 @@ int32 WinMain(
 
     if (ExitCode != 0)
     {
-        DisplayError(Window, ProgramName, ExitCode);
+        DisplayError(Globals.WindowHandle, ProgramName, ExitCode);
     }
     return ExitCode;
 }
