@@ -6,6 +6,7 @@
 //TODO: Understand resource files and rc.exe so that:
 //TODO: Set the icon for the exe file, taskbar, window etc.
 //TODO: Help text?
+//TODO: Cooldown instead of deliberate off-by-one when setting timer
 //TODO: Type in remaining time?
 //TODO: (later) Smoother custom drawing?
 //TODO: (later) OpenGl to replace GDI?
@@ -107,22 +108,14 @@ LRESULT WindowProcedure(
     {
         case WM_MOUSEWHEEL:
         {
-            bool8 IsShifted = GET_KEYSTATE_WPARAM(WordParameter) & MK_SHIFT;
+            bool8 IsCtrlDown = GET_KEYSTATE_WPARAM(WordParameter) & MK_CONTROL;
+            bool8 IsShiftDown = GET_KEYSTATE_WPARAM(WordParameter) & MK_SHIFT;
             int32 Delta = GET_WHEEL_DELTA_WPARAM(WordParameter) / WHEEL_DELTA;
 
-            if (IsShifted)
+            if (IsCtrlDown)
             {
-                Globals.WindowAlpha += 0.1f * Delta;
-                Globals.WindowAlpha = CLAMP(Globals.WindowAlpha, 0.1f, 1.0f);
-                SetLayeredWindowAttributes(
-                    Window,
-                    0, // Key Colour (unused)
-                    (uint8)(Globals.WindowAlpha * 255.0f),
-                    LWA_ALPHA);
-            }
-            else
-            {
-                Delta *= MS_PER_MINUTE;
+                uint32 Increment = IsShiftDown ? (5 * MS_PER_MINUTE) : (1 * MS_PER_MINUTE);
+                Delta *= Increment;
 
                 // Add to wherever the timer has got to
                 Globals.MillisecondsTotal = Globals.MillisecondsRemaining;
@@ -135,15 +128,26 @@ LRESULT WindowProcedure(
                 {
                     Globals.MillisecondsTotal += Delta;
 
-                    // Round off to the nearest minute + a second from which the next tick will be
-                    // subtracted, displaying the round minute
-                    Globals.MillisecondsTotal -= Globals.MillisecondsTotal % MS_PER_MINUTE;
+                    // Round off to the nearest increment + a second from which the next tick will
+                    // be subtracted, displaying the round minute
+                    Globals.MillisecondsTotal -= Globals.MillisecondsTotal % Increment;
                     Globals.MillisecondsTotal += MS_PER_SECOND;
                 }
 
                 // Restart the clock
                 Globals.MillisecondsRemaining = Globals.MillisecondsTotal;
             }
+            else if (IsShiftDown)
+            {
+                Globals.WindowAlpha += 0.1f * Delta;
+                Globals.WindowAlpha = CLAMP(Globals.WindowAlpha, 0.1f, 1.0f);
+                SetLayeredWindowAttributes(
+                    Window,
+                    0, // Key Colour (unused)
+                    (uint8)(Globals.WindowAlpha * 255.0f),
+                    LWA_ALPHA);
+            }
+
         } break;
 
         case WM_CLOSE:
